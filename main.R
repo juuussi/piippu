@@ -10,7 +10,10 @@ source(base_dir %>% paste0("transform.R"))
 
 subjects <- read_csv(base_dir %>% paste0("subjects.csv"))
 
-validation_subjects <- full_validate(subjects)
+validation_subjects <- validate(subjects)
 
 print(validation_subjects)
+print(is_valid(validation_subjects))
+
+subjects_dates <- subjects[,validation_subjects$dates]
 
