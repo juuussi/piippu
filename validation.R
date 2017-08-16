@@ -1,3 +1,8 @@
+# TODO:
+# - Force selection of ID column and require uniqueness of values
+# - Force selection of "categorical" or "ordinal" for factors
+# - Check factors for low ratio of edit distance to length of level to find possible typos
+
 library(strict)
 library(dplyr)
 library(tibble)
@@ -27,7 +32,7 @@ print.validation <- function(x) {
         
           type <- which(c(numerics[var], factors[var], dates[var]))
           
-          # If none of guessed classes, maybe just strings. 
+          # If none of guessed classes, maybe just a column of strings. 
           if(length(type) == 0)
             return ("character")
           
@@ -49,7 +54,7 @@ is_valid <- function(validation) {
   
   # Any non-numeric values in mostly numeric columns?
   nonnum_uniqs <- vapply(FUN.VALUE=integer(1), seq_along(validation$unique_values), 
-                  function(i) validation$numerics[i] && (length(validation$unique_values[i]) > 0))
+                  function(i) validation$numerics[i] && (length(na.omit(validation$unique_values[[i]])) > 0))
   
   nonnum_compl <- vapply(FUN.VALUE=character(1), seq_along(validation$unique_values),
                   function(i) {
@@ -60,7 +65,7 @@ is_valid <- function(validation) {
   
   # Any non-date values in mostly date-filled columns?
   nondate_uniqs <- vapply(FUN.VALUE=integer(1), seq_along(validation$unique_values), 
-                  function(i) validation$dates[i] && (length(validation$unique_values[i]) > 0))
+                  function(i) validation$dates[i] && (length(na.omit(validation$unique_values[[i]])) > 0))
   
   nondate_compl <- vapply(FUN.VALUE=character(1), seq_along(validation$unique_values),
                   function(i) {
@@ -72,7 +77,7 @@ is_valid <- function(validation) {
   # Check factors for values that can be interpreted as numerics. If there are only numerics in a factor, make user choose either categorical or ordinal.
   numerics_in_factor <- vapply(FUN.VALUE=logical(1), seq_along(validation$unique_values),
                          function(i) {
-                           return (validation$factors[i] && any(!is.na(suppressWarnings(as.numeric(validation$unique_values[i])))))
+                           return (validation$factors[i] && any(!is.na(suppressWarnings(as.numeric(na.omit(validation$unique_values[[i]]))))))
                          })
   
   complaints <- na.omit(c(nonnum_compl, nondate_compl))
@@ -96,7 +101,7 @@ validate <- function (data_df, date_type="default") {
   unique_values <- 1:ncol(data_df) %>% lapply(function(col) {
     
       if(factors[col]) {
-         return (unique(data_df[,col]))
+         return (unlist(unique(data_df[,col])))
       }
       else  if(dates[col]) {
         nondate <- !is_date(data_df[[col]])
