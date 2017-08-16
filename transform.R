@@ -10,7 +10,7 @@ library(Rcpp)
 Rcpp::sourceCpp(base_dir %>% paste0("aux_funcs.cpp"))
 
 # R wrapper for C++ function Cpp_add_missing_intervals
-add_missing_intervals <- function(data, idcolnum){
+make_all_intervals <- function(data, idcolnum, config=NULL){
   
   if(!is.matrix(data)) stop("Input data must be a matrix")
   
@@ -23,7 +23,7 @@ add_missing_intervals <- function(data, idcolnum){
     nas <- which(unlist(apply(matr, MARGIN=1, FUN=function(x) all(is.na(x)))))
     return (ifelse(length(nas) > 0, min(nas), Inf))
   }
-  result <- Cpp_add_missing_intervals(data[,1:3])
+  result <- Cpp_add_missing_intervals(data[,1:3], ifelse(!is.null(config), config$analysis_start, 0))
   cut_row <- first_all_NA_row(result)
   # test_that("No non-all-NA-rows are removed", 
   #   expect_true(all(is.na(result[-1:-(cut_row-1), ])))

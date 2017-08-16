@@ -13,7 +13,7 @@ bool between(int x, int y, int a, int b) {
 }
 
 // [[Rcpp::export]]
-IntegerMatrix Cpp_add_missing_intervals(IntegerMatrix original_data){
+IntegerMatrix Cpp_add_missing_intervals(IntegerMatrix original_data, int first_point=0){
   //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
   // Assume data sorted by id!
   //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -29,7 +29,7 @@ IntegerMatrix Cpp_add_missing_intervals(IntegerMatrix original_data){
   int current_id = original_data(0, 0);
   int next_id;
   std::vector<int> tps; //(NA_INTEGER);
-  tps.push_back(0);
+  tps.push_back(first_point);
   
   for(int orig_iter = 0; orig_iter < original_data.nrow(); orig_iter++) {
     
@@ -78,7 +78,7 @@ IntegerMatrix Cpp_add_missing_intervals(IntegerMatrix original_data){
       }
       // Clear timepoints for next id
       tps.clear();
-      tps.push_back(0);
+      tps.push_back(first_point);
     }
     
   }

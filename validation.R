@@ -9,13 +9,12 @@ library(tibble)
 library(stringr)
 library(futile.logger)
 
-
 validation <- function(unique_values = list(), factors=logical(), dates=logical(), numerics=logical()) 
   structure(list(unique_values = unique_values, factors = factors,dates=dates, numerics=numerics), class="validation")
 
 print.validation <- function(x) {
-  cat("\tUnique values:\n")
   
+  cat("\tUnique values:\n")
   
   padded_colnames <- vapply(FUN.VALUE= character(1), 
                             seq_along(x$unique_values),
@@ -74,13 +73,18 @@ is_valid <- function(validation) {
                     else NA_character_
                   })
   
-  # Check factors for values that can be interpreted as numerics. If there are only numerics in a factor, make user choose either categorical or ordinal.
+  # Check factors for values that can be interpreted as numerics. 
+  # TODO: If there are only numerics in a factor, make user choose either categorical or ordinal.
   numerics_in_factor <- vapply(FUN.VALUE=logical(1), seq_along(validation$unique_values),
                          function(i) {
                            return (validation$factors[i] && any(!is.na(suppressWarnings(as.numeric(na.omit(validation$unique_values[[i]]))))))
                          })
   
-  complaints <- na.omit(c(nonnum_compl, nondate_compl))
+  mixed_compl <- character(0)
+  if(any(with(validation, dates & numerics | dates & factors | numerics & factors))) {
+    mixed_compl <- "There are columns with ambiguous types."
+  }
+  complaints <- na.omit(c(nonnum_compl, nondate_compl, mixed_compl))
   if(length(complaints) > 0) {
     for(compl in complaints) print(compl)
     return (FALSE)
