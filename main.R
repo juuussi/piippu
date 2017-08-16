@@ -1,6 +1,7 @@
 library(strict)
 library(dplyr)
 library(readr)
+library(survival)
 
 options(warn=2)
 
@@ -8,6 +9,7 @@ base_dir <- "~/projects/piippu/"
 source(base_dir %>% paste0("validation.R"))
 source(base_dir %>% paste0("transform.R"))
 source(base_dir %>% paste0("configuration.R"))
+source(base_dir %>% paste0("data_object.R"))
 
 config <- configuration(analysis_start = "19.1.2007", analysis_end = "1.1.2014")
 
@@ -37,23 +39,12 @@ if( !is_valid(validation_subjects) || !is_valid(validation_drugs) || !is_valid(v
 
 events[,validation_events$dates] <- to_unix_time(events[,validation_events$dates])
 
-colnames(drugs)[colnames(drugs) == "dose"] <- "value"
-colnames(drugs)[colnames(drugs) == "class"] <- "name"
-drugs <- cbind(drugs, type=rep("drug"))
-events <- cbind(events, type=rep("event"))
-timedep_data <- rbind(drugs,events)
-timedep_data$name <- as.factor(timedep_data$name)
-namelevels <- unique(data.frame(levels = as.character(timedep_data$name), values=unclass(timedep_data$name), stringsAsFactors=FALSE))
-timedep_data$type <- as.factor(timedep_data$type)
-typelevels <- unique(data.frame(levels = as.character(timedep_data$type), values=unclass(timedep_data$type), stringsAsFactors=FALSE))
-timedep_data$value <- as.factor(timedep_data$value)
-valuelevels <- unique(data.frame(levels = as.character(timedep_data$value), values=unclass(timedep_data$value), stringsAsFactors=FALSE))
-timedep_data$name <- unclass(timedep_data$name)
-timedep_data$type <- unclass(timedep_data$type)
-timedep_data$value <- unclass(timedep_data$value)
-timedep_data <- data.matrix(timedep_data)
+#timedep_data <- as.data_object(timedep_data)
+events <- as.data_object(events)
+drugs <- as.data_object(drugs)
+subjects <- as.data_object(subjects)
 
-narrow_data <- make_all_intervals(timedep_data, idcolnum = which(colnames(timedep_data) == "person_id"), config=config)
-# Add people who have no events or drug usages to data
-extra_lines <- cbind(person_id = base::setdiff(subjects$person_id, narrow_data[,1]), start = config$analysis_start, end = config$analysis_end)
-narrow_data <- rbind(narrow_data, extra_lines)
+narrow_data <- make_narrow(subjects, drugs, events, config$analysis_start, config$analysis_end)
+narrow_data <- data.frame(narrow_data)
+
+model <- lax( coxph(Surv(start, end, V5) ~ V6, narrow_data))

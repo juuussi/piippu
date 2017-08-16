@@ -85,7 +85,7 @@ IntegerMatrix Cpp_add_missing_intervals(IntegerMatrix original_data, int first_p
   return(new_matrix);
 }
 // [[Rcpp::export]]
-IntegerMatrix add_event_indicators(IntegerMatrix orig_data, IntegerMatrix event_data, bool permanent=false) {
+IntegerMatrix Cpp_add_event_indicators(IntegerMatrix orig_data, IntegerMatrix event_data, bool permanent=false) {
   // Expect orig_data AND event_data to be sorted by ids in first column
   int current_id = orig_data(0,0);
   int event_id_iter = 0;
@@ -119,4 +119,18 @@ IntegerMatrix add_event_indicators(IntegerMatrix orig_data, IntegerMatrix event_
     }
   }
   return(ind_vect);
+}
+
+// [[Rcpp::export]]
+NumericVector Cpp_add_med_col(NumericMatrix data, NumericMatrix meddata) {
+  NumericVector result(data.nrow());
+  //LogicalVector d(data.nrow());
+  for(int j = 0; j < data.nrow(); j++) {
+    for(int i = 0; i < meddata.nrow(); i++) {
+      if(data(j,0) == meddata(i,0) && data(j,1) >= meddata(i,1) && data(j,2) <= meddata(i,2)) {
+        result(j) = meddata(i,3);
+      }
+    }
+  }
+  return(result);
 }
