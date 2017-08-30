@@ -1,3 +1,5 @@
+rm(list=ls(all.names=TRUE))
+
 library(strict)
 library(dplyr)
 library(readr)
@@ -11,7 +13,8 @@ source(base_dir %>% paste0("transform.R"))
 source(base_dir %>% paste0("configuration.R"))
 source(base_dir %>% paste0("data_object.R"))
 
-config <- configuration(analysis_start = "19.1.2007", analysis_end = "1.1.2014")
+# Set configuration
+configuration(analysis_start = "19.1.2007", analysis_end = "1.1.2014")
 
 # subjects <- read_csv(base_dir %>% paste0("subjects.csv"))
 # validation_subjects <- validate(subjects)
@@ -44,7 +47,8 @@ events <- as.data_object(events)
 drugs <- as.data_object(drugs)
 subjects <- as.data_object(subjects)
 
-narrow_data <- make_narrow(subjects, drugs, events, config$analysis_start, config$analysis_end)
-narrow_data <- data.frame(narrow_data)
+wide_data <- make_wide(subjects, drugs, events)
+wide_data <- data.frame(wide_data)
 
-model <- lax( coxph(Surv(start, end, V5) ~ V6, narrow_data))
+model <- lax( coxph(Surv(start, end, Hipfracture) ~ A + cluster(person_id), wide_data) )
+plot(survfit(model))

@@ -9,38 +9,87 @@ library(Rcpp)
 
 Rcpp::sourceCpp(base_dir %>% paste0("aux_funcs.cpp"))
 
-# Combine data and put it into narrow format
-# Assumes data_object input
-make_narrow <- function(timeindep_data, drug_data, event_data, min.date, max.date) {
+# Check argument for zero length, NULL, NaN or NA value
+valid_arg <- function(arg, stop_on_false=TRUE) {
+  if(length(arg) == 0) {
+    if(stop_on_false) {
+      stop("Argument is of zero length.")
+    }
+    return (FALSE)
+  }
+  if(is.na(arg)) {
+    if(stop_on_false) {
+      stop("Argument is NA.")
+    }
+    return (FALSE)
+  }
+  if(is.null(arg)) {
+    if(stop_on_false) {
+      stop("Argument is NULL.")
+    }
+    return (FALSE)
+  }
+  if(is.nan(arg)) {
+    if(stop_on_false) {
+      stop("Argument is NULL.")
+    }
+    return (FALSE)
+  }
   
+  return (TRUE)
+}
+
+# Combine data and put it into wide format
+# Assumes data_object input
+#' Title
+#'
+#' @param timeindep_data 
+#' @param drug_data 
+#' @param event_data 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+make_wide <- function(timeindep_data, drug_data, event_data) {
+  
+  if(class(timeindep_data) != "data_object") 
+    stop(paste0("Argument `timeindep_data` is of class `", class(timeindep_data), "` instead of required class `data_object`."))
+  if(class(drug_data) != "data_object") 
+    stop(paste0("Argument `drug_data` is of class `", class(drug_data), "` instead of required class `data_object`."))
+  if(class(event_data) != "data_object") 
+    stop(paste0("Argument `event_data` is of class `", class(event_data), "` instead of required class `data_object`."))
+  
+  
+  # When doing rbind, must have same column names
   drug_data <- rename_column(drug_data, "dose", "value")
   drug_data <- rename_column(drug_data, "class", "name")
-  #colnames(drug_data$data_matrix)[colnames(drug_data$data_matrix) == "dose"] <- "value"
-  #colnames(drug_data$data_matrix)[colnames(drug_data$data_matrix) == "class"] <- "name"
   drug_frame <- data.frame(drug_data$data_matrix, type=rep("drug"), stringsAsFactors=FALSE)
   event_frame <- data.frame(event_data$data_matrix, type=rep("event"), stringsAsFactors=FALSE)
-  timedep_data <- as.data.frame(rbind(drug_frame,drug_frame),stringsAsFactors=TRUE)
+  timedep_data <- as.data.frame(rbind(event_frame,drug_frame),stringsAsFactors=TRUE)
   timedep_data <- as.data_object(timedep_data)
   
-  narrow_data <- make_all_intervals(timedep_data$data_matrix, idcolnum = 1)#, config=config) #TODO fix config usage
+  wide_data <- make_all_intervals(timedep_data$data_matrix, idcolnum = 1)
   # Add people who have no events or drug usages to data
-  extra_lines <- cbind(person_id = base::setdiff(timeindep_data$data_matrix[,"person_id"], narrow_data[,1]), start = min.date, end = max.date)
-  narrow_data <- rbind(narrow_data, extra_lines)
+  extra_lines <- cbind(person_id = base::setdiff(timeindep_data$data_matrix[,"person_id"], wide_data[,1]), start = .config$analysis_start, end = .config$analysis_end)
+  wide_data <- rbind(wide_data, extra_lines)
   
   # Add event indicators
-  narrow_data <- cbind(narrow_data, add_event_indicators(narrow_data, events$data_matrix[,c(1,2,4)], idcolnum = 1))
+  wide_data <- cbind(wide_data, add_event_indicators(wide_data, events$data_matrix[,c(1,3,4)], idcolnum = 1))
+  colnames(wide_data)[4:(3+length(events$lvls$name))] <- events$lvls$name
   
   # Add drug columns
-  narrow_data <- cbind(narrow_data, make_drug_columns(narrow_data, drug_data$data_matrix))
+  wide_data <- cbind(wide_data, make_drug_columns(wide_data, drug_data$data_matrix))
+  colnames(wide_data)[(4+length(events$lvls$name)):(4+length(events$lvls$name)+length(drugs$lvls$class)-1)] <- drugs$lvls$class
   
   # Add time-independent variables
   # TODO
   
-  return (narrow_data)
+  return (wide_data)
 }
 
 # R wrapper for C++ function Cpp_add_missing_intervals
-make_all_intervals <- function(data, idcolnum, config=NULL){
+make_all_intervals <- function(data, idcolnum){
   
   if(!is.matrix(data)) stop("Input data must be a matrix")
   
@@ -53,7 +102,7 @@ make_all_intervals <- function(data, idcolnum, config=NULL){
     nas <- which(unlist(apply(matr, MARGIN=1, FUN=function(x) all(is.na(x)))))
     return (ifelse(length(nas) > 0, min(nas), Inf))
   }
-  result <- Cpp_add_missing_intervals(data[,1:3], ifelse(!is.null(config), config$analysis_start, 0))
+  result <- Cpp_add_missing_intervals(data[,1:3], .config$analysis_start)
   cut_row <- first_all_NA_row(result)
   # test_that("No non-all-NA-rows are removed", 
   #   expect_true(all(is.na(result[-1:-(cut_row-1), ])))
@@ -91,7 +140,7 @@ add_event_indicators <- function(time_matrix, event_data, idcolnum, permanent=FA
                          seq_along(events), 
                          function(x) Cpp_add_event_indicators(time_matrix, events[[x]], permanent)
   ))
-  #colnames(indic_matrix) <- colnames(event_data)[2:ncol(event_data)]
+  
   
   return (indic_matrix)
 }
@@ -105,10 +154,11 @@ make_drug_columns <- function(narrow_data, drug_data) {
   drugs <- c(drugs, lapply(unique(drug_data[,4]), 
                            function(x) drug_data[drug_data[,4]==x,c(1:3,5),drop=FALSE]
   ))
+  drug_cols <- cbind(vapply(FUN.VALUE=numeric(nrow(narrow_data)), drugs, 
+                      function(x) Cpp_add_med_col(narrow_data, x)
+                    ))
   
-  return (cbind(vapply(FUN.VALUE=numeric(nrow(narrow_data)), drugs, 
-         function(x) Cpp_add_med_col(narrow_data, x)
-  )))
+  return (drug_cols)
 }
 
 # REDUNDANT function if marking NA's while reading csv's?

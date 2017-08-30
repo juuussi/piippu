@@ -27,7 +27,7 @@ IntegerMatrix Cpp_add_missing_intervals(IntegerMatrix original_data, int first_p
   int new_row_iter = 0;
   
   int current_id = original_data(0, 0);
-  int next_id;
+  //int next_id;
   std::vector<int> tps; //(NA_INTEGER);
   tps.push_back(first_point);
   
