@@ -10,7 +10,7 @@ library(Rcpp)
 Rcpp::sourceCpp(base_dir %>% paste0("aux_funcs.cpp"))
 
 # Check argument for zero length, NULL, NaN or NA value
-valid_arg <- function(arg, stop_on_false=TRUE) {
+valid_arg <- function(arg, expected_class=NULL, stop_on_false=TRUE) {
   if(length(arg) == 0) {
     if(stop_on_false) {
       stop("Argument is of zero length.")
@@ -35,22 +35,13 @@ valid_arg <- function(arg, stop_on_false=TRUE) {
     }
     return (FALSE)
   }
+  if(!is.null(expected_class) && class(arg) == expected_class) {
+   
+  }
   
   return (TRUE)
 }
 
-# Combine data and put it into wide format
-# Assumes data_object input
-#' Title
-#'
-#' @param timeindep_data 
-#' @param drug_data 
-#' @param event_data 
-#'
-#' @return
-#' @export
-#'
-#' @examples
 make_wide <- function(timeindep_data, drug_data, event_data) {
   
   if(class(timeindep_data) != "data_object") 
@@ -71,7 +62,7 @@ make_wide <- function(timeindep_data, drug_data, event_data) {
   
   wide_data <- make_all_intervals(timedep_data$data_matrix, idcolnum = 1)
   # Add people who have no events or drug usages to data
-  extra_lines <- cbind(person_id = base::setdiff(timeindep_data$data_matrix[,"person_id"], wide_data[,1]), start = .config$analysis_start, end = .config$analysis_end)
+  extra_lines <- cbind(person_id = base::setdiff(timeindep_data$data_matrix[,"person_id"], wide_data[,1]), start = getAnalysisStart(), end = getAnalysisEnd())
   wide_data <- rbind(wide_data, extra_lines)
   
   # Add event indicators
@@ -102,7 +93,7 @@ make_all_intervals <- function(data, idcolnum){
     nas <- which(unlist(apply(matr, MARGIN=1, FUN=function(x) all(is.na(x)))))
     return (ifelse(length(nas) > 0, min(nas), Inf))
   }
-  result <- Cpp_add_missing_intervals(data[,1:3], .config$analysis_start)
+  result <- Cpp_add_missing_intervals(data[,1:3], getAnalysisStart())
   cut_row <- first_all_NA_row(result)
   # test_that("No non-all-NA-rows are removed", 
   #   expect_true(all(is.na(result[-1:-(cut_row-1), ])))

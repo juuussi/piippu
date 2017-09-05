@@ -14,7 +14,7 @@ source(base_dir %>% paste0("configuration.R"))
 source(base_dir %>% paste0("data_object.R"))
 
 # Set configuration
-configuration(analysis_start = "19.1.2007", analysis_end = "1.1.2014")
+Configuration(analysis_start_date = "19.1.2007", analysis_end_date = "1.1.2014")
 
 # subjects <- read_csv(base_dir %>% paste0("subjects.csv"))
 # validation_subjects <- validate(subjects)
