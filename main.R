@@ -12,40 +12,26 @@ source(base_dir %>% paste0("validation.R"))
 source(base_dir %>% paste0("transform.R"))
 source(base_dir %>% paste0("configuration.R"))
 source(base_dir %>% paste0("data_object.R"))
+source(base_dir %>% paste0("common_funcs.R"))
 
 # Set configuration
-Configuration(analysis_start_date = "19.1.2007", analysis_end_date = "1.1.2014")
+readConfigFile(base_dir %>% paste0("piippu_config"))
+data <- lapply(getFiles(), 
+               function(x) read_delim(x, delim=";"))
 
-# subjects <- read_csv(base_dir %>% paste0("subjects.csv"))
-# validation_subjects <- validate(subjects)
-# print(validation_subjects)
-# print(is_valid(validation_subjects))
+# TODO: bubblegum solution for current test data
+data$subjects_file[c("dob","deathdate","cohort_entry")] <- do.call(cbind, lapply(data$subjects_file[c("dob","deathdate","cohort_entry")], to_unix_time))
+data$events_file[c("date")] <- do.call(cbind, lapply(data$events_file[c("date")], to_unix_time))
+data$drugs_file[c("start","stop")] <- do.call(cbind, lapply(data$drugs_file[c("start","stop")], to_unix_time))
+#validations <- lapply(data, validate)
 
-subjects <- read_csv(base_dir %>% paste0("subjects_fixed.csv"))
-validation_subjects <- validate(subjects)
-print(validation_subjects)
+# if(!all(vapply(validations, is_valid, FUN.VALUE=logical(1))))
+#   stop("Validation failed")
 
-subjects[,validation_subjects$dates] <- to_unix_time(subjects[,validation_subjects$dates])
 
-drugs <- read_delim(base_dir %>% paste0("drugs.csv"), delim=";")
-validation_drugs <- validate(drugs)
-print(validation_drugs)
-drugs[,validation_drugs$dates] <- to_unix_time(drugs[,validation_drugs$dates])
-
-events <- read_delim(base_dir %>% paste0("events.csv"), delim=";")
-events$value[is.na(events$value)] <- "default" 
-validation_events <- validate(events)
-print(validation_events)
-
-if( !is_valid(validation_subjects) || !is_valid(validation_drugs) || !is_valid(validation_events) )
-  stop("Validation failed")
-
-events[,validation_events$dates] <- to_unix_time(events[,validation_events$dates])
-
-#timedep_data <- as.data_object(timedep_data)
-events <- as.data_object(events)
-drugs <- as.data_object(drugs)
-subjects <- as.data_object(subjects)
+events <- as.data_object(data$events_file)
+drugs <- as.data_object(data$drugs_file)
+subjects <- as.data_object(data$subjects_file[c("person_id", "dob", "deathdate")])
 
 wide_data <- make_wide(subjects, drugs, events)
 wide_data <- data.frame(wide_data)

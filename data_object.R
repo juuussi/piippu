@@ -1,7 +1,11 @@
 # A class that keeps data as a numeric matrix and stores separately factors and strings coded as levels.
 
-data_object <- function(data_matrix) {
-  structure(list(data_matrix = data_matrix, lvls=data.frame()), class="data_object")
+setClass("DataObject", 
+         list(data_matrix = "matrix", lvls="data.frame"))
+
+DataObject <- function(data_matrix) {
+  temp <- new("DataObject", data_matrix = data_matrix, 
+          lvls=data.frame())
 }
 
 as.data_object <- function(dataframe) {

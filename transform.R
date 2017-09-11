@@ -7,40 +7,10 @@ library(lubridate)
 library(survival)
 library(Rcpp)
 
+source(base_dir %>% paste0("common_funcs.R"))
+
 Rcpp::sourceCpp(base_dir %>% paste0("aux_funcs.cpp"))
 
-# Check argument for zero length, NULL, NaN or NA value
-valid_arg <- function(arg, expected_class=NULL, stop_on_false=TRUE) {
-  if(length(arg) == 0) {
-    if(stop_on_false) {
-      stop("Argument is of zero length.")
-    }
-    return (FALSE)
-  }
-  if(is.na(arg)) {
-    if(stop_on_false) {
-      stop("Argument is NA.")
-    }
-    return (FALSE)
-  }
-  if(is.null(arg)) {
-    if(stop_on_false) {
-      stop("Argument is NULL.")
-    }
-    return (FALSE)
-  }
-  if(is.nan(arg)) {
-    if(stop_on_false) {
-      stop("Argument is NULL.")
-    }
-    return (FALSE)
-  }
-  if(!is.null(expected_class) && class(arg) == expected_class) {
-   
-  }
-  
-  return (TRUE)
-}
 
 make_wide <- function(timeindep_data, drug_data, event_data) {
   
