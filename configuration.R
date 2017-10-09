@@ -6,10 +6,10 @@ source(base_dir %>% paste0("common_funcs.R"))
 # TODO: Create hidden list of global variables?
 
 setClass(Class="Configuration", 
-         slots = list(starttime = "integer", endtime = "integer", files="character"))
+         slots = list(values="list"))
 
 #Constructor
-Configuration <- function(analysis_start_date, analysis_end_date, files=character(0), replace=FALSE) {
+Configuration <- function(analysis_start_date, analysis_end_date, other_values=list(), replace=FALSE) {
   if(exists(".config") && replace == FALSE) {
     stop("Configuration object already exists. To replace it, use the `replace=TRUE` argument.")
   } else {
@@ -17,24 +17,36 @@ Configuration <- function(analysis_start_date, analysis_end_date, files=characte
       analysis_start <- to_unix_time(analysis_start_date)
       analysis_end   <- to_unix_time(analysis_end_date)
       if(analysis_end <= analysis_start) stop("Analysis end date cannot be before or the same as the analysis start date.")
-      .config <<- new("Configuration", starttime=analysis_start, endtime=analysis_end, files=files)
+      .config <<- new("Configuration", values=c(list(starttime=analysis_start, endtime=analysis_end), other_values))
     }
   }
 }
 
 getAnalysisStart <- function() {
   if(!exists(".config")) stop("Configuration object does not exist. Use the function `Configuration` to initialize one.")
-  return(.config@starttime)
+  return(.config@values$starttime)
 }
 getAnalysisEnd <- function() {
   if(!exists(".config")) stop("Configuration object does not exist. Use the function `Configuration` to initialize one.")
-  return(.config@endtime)
+  return(.config@values$endtime)
 }
 getFiles <- function() {
   if(!exists(".config")) stop("Configuration object does not exist. Use the function `Configuration` to initialize one.")
-  return(.config@files)
+  return(list(subjects_file = .config@values$subjects_file,
+              drugs_file = .config@values$drugs_file,
+              events_file = .config@values$events_file,
+              blackbox_file = .config@values$blackbox_file,
+              covariates_file = .config@values$covariates_file)
+         )
 }
-
+getOption <- function (option) {
+  if(!exists(".config")) stop("Configuration object does not exist. Use the function `Configuration` to initialize one.")
+  valid_arg(option, expected_class="character", expected_length=1, stop_on_false=TRUE)
+  
+  opt <- .config@values[[option]]
+  if(!is.null(opt)) return(opt)
+  else stop(paste0("No such option `", option, "` in configuration."))
+}
 test_that("Configuration: Arguments are validated correctly", 
           {
             expect_error(Configuration("11.10.2013", "10.10.2013", replace=TRUE))
@@ -50,15 +62,19 @@ test_that("Configuration: deny accidental replacement",
 rm(.config)
 
 # Reading config from file
-readConfigFile <- function(path) {
+readConfigFile <- function(path, replace=FALSE) {
   
   valid_arg(path, expected_class="character", expected_length=1, stop_on_false=TRUE)
   
   strs <- readLines(path)
   strs <- strsplit(strs, "=", fixed=TRUE)
   opts <- lapply(strs, function(x) x[2])
+  opts <- lapply(opts, function(str) strsplit(str, ",", fixed=TRUE)[[1]])
+  
   names(opts) <- lapply(strs, function(x) x[1])
   
-  Configuration(opts$analysis_start_date, opts$analysis_end_date, files=unlist(opts[base::setdiff(names(opts), c("analysis_start_date", "analysis_end_date"))]))
+  Configuration(opts$analysis_start_date, 
+                opts$analysis_end_date,
+                opts[base::setdiff(names(opts), c("analysis_start_date", "analysis_end_date"))], replace=replace)
   
 }
