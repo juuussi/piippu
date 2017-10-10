@@ -11,14 +11,14 @@ source(base_dir %>% paste0("common_funcs.R"))
 
 Rcpp::sourceCpp(base_dir %>% paste0("aux_funcs.cpp"))
 
+#TODO: use dplyr more
 
-make_wide <- function(timeindep_data, drug_data, event_data) {
+make_long <- function(timeindep_data, drug_data, event_data, static_covariate_data) {
   
   valid_arg(timeindep_data, expected_class="DataObject", stop_on_false=TRUE)
   valid_arg(drug_data, expected_class="DataObject", stop_on_false=TRUE)
   valid_arg(event_data, expected_class="DataObject", stop_on_false=TRUE)
-  
-  
+  valid_arg(static_covariate_data, expected_class="DataObject", stop_on_false=TRUE)
   
   
   # Data objects must have correct variable names to avoid mistakes with misordered columns
@@ -27,6 +27,8 @@ make_wide <- function(timeindep_data, drug_data, event_data) {
   if(!colnames(drug_data@data_matrix) %>% base::setequal(c("person_id", "start", "stop", "class")))
   #if(!all(colnames(drug_data@data_matrix) %in% c("person_id", "start", "stop", "class")))
     stop("Drug data must have columns called `person_id`, `start`, `stop`, `class`.")#, and optionally `dose`.")
+  if(!colnames(static_covariate_data@data_matrix) %>% base::setequal(c("person_id", "name", "value")))
+    stop("Static covariate data must have columns called `person_id`, `name` and `value`.")
   
   # When doing rbind, must have same column names
   #if("dose" %in% colnames(drug_data)) {
@@ -37,6 +39,7 @@ make_wide <- function(timeindep_data, drug_data, event_data) {
   
   event_data <- reorder_columns(event_data, c("person_id", "start", "stop", "value")) 
   drug_data  <- reorder_columns(drug_data, c("person_id", "start", "stop", "value"))
+  static_covariate_data  <- reorder_columns(static_covariate_data, c("person_id", "name", "value"))
   
   #drug_data <- rename_column(drug_data, "class", "value")
   drug_frame <- data.frame(drug_data@data_matrix, type=rep("drug"), stringsAsFactors=FALSE)
@@ -44,25 +47,30 @@ make_wide <- function(timeindep_data, drug_data, event_data) {
   timedep_data <- as.data.frame(rbind(event_frame,drug_frame),stringsAsFactors=TRUE)
   timedep_data <- asDataObject(timedep_data)
   
-  wide_data <- make_all_intervals(timedep_data@data_matrix, idcolnum = 1)
+  long_data <- make_all_intervals(timedep_data@data_matrix, idcolnum = 1)
   # Add people who have no events or drug usages to data
-  extra_lines <- cbind(person_id = base::setdiff(timeindep_data@data_matrix[,"person_id"], wide_data[,1]), start = getAnalysisStart(), end = getAnalysisEnd())
-  wide_data <- rbind(wide_data, extra_lines)
+  extra_lines <- cbind(person_id = base::setdiff(timeindep_data@data_matrix[,"person_id"], long_data[,1]), start = getAnalysisStart(), end = getAnalysisEnd())
+  long_data <- rbind(long_data, extra_lines)
   
   # Add event indicators
-  event_inds <- add_event_indicators(wide_data, events@data_matrix[,c(1,3,4)], idcolnum = 1)
-  wide_data <- cbind(wide_data, event_inds)
-  colnames(wide_data)[4:(3+length(events@lvls$value))] <- events@lvls$value
+  event_inds <- add_event_indicators(long_data, events@data_matrix[,c(1,3,4)], idcolnum = 1)
+  long_data <- cbind(long_data, event_inds)
+  colnames(long_data)[4:(3+length(events@lvls$value))] <- events@lvls$value
   
   # Add drug columns
-  drug_cols <- make_drug_columns(wide_data, drug_data@data_matrix)
-  wide_data <- cbind(wide_data, drug_cols)
-  colnames(wide_data)[(4+length(events@lvls$value)):(4+length(events@lvls$value)+length(drugs@lvls$class)-1)] <- drugs@lvls$class
+  drug_cols <- make_drug_columns(long_data, drug_data@data_matrix)
+  long_data <- cbind(long_data, drug_cols)
+  colnames(long_data)[(4+length(events@lvls$value)):(4+length(events@lvls$value)+length(drugs@lvls$class)-1)] <- drugs@lvls$class
   
   # Add time-independent variables
-  # TODO
+  static_covs_long <- matrix(0, ncol=length(static_covariate_data@lvls$name), nrow=nrow(long_data), dimnames=list(NULL, static_covariate_data@lvls$name))
+  temp <- static_covariates@data_matrix[match(long_data[,"person_id"], static_covariate_data@data_matrix[,"person_id"]), c("name", "value")]
+  for(i in static_covariate_data@lvls$name) {
+    static_covs_long[static_covariate_data@lvls$name[ temp[,"name"] ] == i,i] <- temp[static_covariate_data@lvls$name[ temp[,"name"] ] == i, "value"]
+  }
+  long_data <- cbind(long_data, static_covs_long)
   
-  return (wide_data)
+  return (long_data)
 }
 
 # R wrapper for C++ function Cpp_add_missing_intervals
@@ -155,9 +163,9 @@ reinsert_NAs <- function(data, cols=1:ncol(data), ...) {
 
 to_unix_time <- function(date_strings, tz="UTC") {
   if(is.vector(date_strings))
-    return (as.integer(parse_date_time(date_strings, tz=tz, orders=c("%m/%d/%Y","%d.%m.%Y"), exact=TRUE)))
+    return (as.integer(as.integer(parse_date_time(date_strings, tz=tz, orders=c("%m/%d/%Y","%d.%m.%Y"), exact=TRUE))/86400))
   if(is.data.frame(date_strings))
     return (vapply(date_strings, FUN.VALUE=integer(nrow(date_strings)), 
-                   function(strs) return (as.integer(parse_date_time(strs, tz=tz, orders=c("%m/%d/%Y","%d.%m.%Y"), exact=TRUE)))))
+                   function(strs) return (as.integer(as.integer(parse_date_time(strs, tz=tz, orders=c("%m/%d/%Y","%d.%m.%Y"), exact=TRUE))/86400))))
 }
 

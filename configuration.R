@@ -36,7 +36,7 @@ getFiles <- function() {
               drugs_file = .config@values$drugs_file,
               events_file = .config@values$events_file,
               blackbox_file = .config@values$blackbox_file,
-              covariates_file = .config@values$covariates_file)
+              static_covariates_file = .config@values$static_covariates_file)
          )
 }
 getOption <- function (option) {

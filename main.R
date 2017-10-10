@@ -33,10 +33,15 @@ filter_ids <- data$blackbox_file %>% select("person_id", "type") %>%
               pull("person_id")
 length(unique(filter_ids))
 
-drugs <- asDataObject(data$drugs_file)
 subjects <- asDataObject(data$subjects_file[c("person_id", "dob", "deathdate")])
 
-covariates <- asDataObject(data$covariates_file[,c("person_id", "name", "value")])
+drugs <- asDataObject(data$drugs_file)
+events <- filter_out_data(drugs, "person_id", 
+                          drugs@data_matrix[!(drugs@data_matrix[,"person_id", drop=TRUE] %in% subjects@data_matrix[,"person_id", drop=TRUE]),"person_id", drop=TRUE])
+
+static_covariates <- asDataObject(data$static_covariates_file[,c("person_id", "name", "value")])
+static_covariates <- filter_out_data(static_covariates, "person_id", 
+                          static_covariates@data_matrix[!(static_covariates@data_matrix[,"person_id", drop=TRUE] %in% subjects@data_matrix[,"person_id", drop=TRUE]),"person_id", drop=TRUE])
 
 events <- asDataObject(data$events_file[,c("person_id", "date", "date", "event")])
 events <- rename_column(events, "event", "value")
@@ -45,19 +50,28 @@ events <- rename_column(events, "date.1", "stop")
 events <- filter_out_data(events, "person_id", 
                           events@data_matrix[!(events@data_matrix[,"person_id", drop=TRUE] %in% subjects@data_matrix[,"person_id", drop=TRUE]),"person_id", drop=TRUE])
 
-
 subjects <- filter_out_data(subjects, "person_id", filter_ids)
 events <- filter_out_data(events, "person_id", filter_ids)
 #drugs <- filter_out_data(drugs, "person_id", which(!(drugs@data_matrix[,"person_id", drop=TRUE] %in% subjects@data_matrix[,"person_id", drop=TRUE])))
 drugs <- filter_out_data(drugs, "person_id", filter_ids)
+static_covariates <- filter_out_data(static_covariates, "person_id", filter_ids)
+
+# Remove any events or drug usage periods past analysis end date
+drugs@data_matrix <- drugs@data_matrix[drugs@data_matrix[,"start"] <= getAnalysisEnd(),]
+events@data_matrix <- events@data_matrix[events@data_matrix[,"start"] <= getAnalysisEnd(),]
+# Truncate drug usages to analysis end date
+drugs@data_matrix[drugs@data_matrix[,"stop"] > getAnalysisEnd(),] <- getAnalysisEnd()
+
 # Should I remove people  in `events` but not `subjects`? 
 
-wide_data <- make_wide(subjects, drugs, events)
-wide_data <- data.frame(wide_data)
-length(unique(wide_data[,"person_id", drop=TRUE]))
-#wide_data <- wide_data %>% dplyr::filter(!(.data$person_id %in% filter_ids))
+long_data <- make_long(subjects, drugs, events, static_covariates)
+long_data <- data.frame(long_data)
+length(unique(long_data[,"person_id", drop=TRUE]))
 
 model <- #lax( 
-  coxph(as.formula(paste0("Surv(start, stop, ",getOption("outcome"),") ~ ", getOption("predictor"), " + cluster(person_id)")), wide_data) 
+  coxph(as.formula(paste0("Surv(start, stop, ",getOption("outcome"),") ~ ", getOption("predictor"), " + cluster(person_id)")), long_data) 
 #)
 plot(survfit(model))
+summary(model)
+confint(model)
+exp(confint(model))
