@@ -22,12 +22,12 @@ make_long <- function(timeindep_data, drug_data, event_data, static_covariate_da
   
   
   # Data objects must have correct variable names to avoid mistakes with misordered columns
-  if(!colnames(event_data@data_matrix) %>% base::setequal(c("person_id", "start", "stop", "value")))
+  if(!colnames(event_data) %>% base::setequal(c("person_id", "start", "stop", "value")))
     stop("Event data must have columns called `person_id`, `start`, `stop` and `value`.")
-  if(!colnames(drug_data@data_matrix) %>% base::setequal(c("person_id", "start", "stop", "class")))
+  if(!colnames(drug_data) %>% base::setequal(c("person_id", "start", "stop", "class")))
   #if(!all(colnames(drug_data@data_matrix) %in% c("person_id", "start", "stop", "class")))
     stop("Drug data must have columns called `person_id`, `start`, `stop`, `class`.")#, and optionally `dose`.")
-  if(!colnames(static_covariate_data@data_matrix) %>% base::setequal(c("person_id", "name", "value")))
+  if(!colnames(static_covariate_data) %>% base::setequal(c("person_id", "name", "value")))
     stop("Static covariate data must have columns called `person_id`, `name` and `value`.")
   
   # When doing rbind, must have same column names
@@ -41,32 +41,32 @@ make_long <- function(timeindep_data, drug_data, event_data, static_covariate_da
   drug_data  <- reorder_columns(drug_data, c("person_id", "start", "stop", "value"))
   static_covariate_data  <- reorder_columns(static_covariate_data, c("person_id", "name", "value"))
   
-  #drug_data <- rename_column(drug_data, "class", "value")
-  drug_frame <- data.frame(drug_data@data_matrix, type=rep("drug"), stringsAsFactors=FALSE)
-  event_frame <- data.frame(event_data@data_matrix, type=rep("event"), stringsAsFactors=FALSE)
-  timedep_data <- as.data.frame(rbind(event_frame,drug_frame),stringsAsFactors=TRUE)
-  timedep_data <- asDataObject(timedep_data)
+  timedep_data <- rowbind(events, drugs)#asDataObject(timedep_data)
   
   long_data <- make_all_intervals(timedep_data@data_matrix, idcolnum = 1)
   # Add people who have no events or drug usages to data
-  extra_lines <- cbind(person_id = base::setdiff(timeindep_data@data_matrix[,"person_id"], long_data[,1]), start = getAnalysisStart(), end = getAnalysisEnd())
+  extra_lines <- cbind(person_id = timeindep_data$person_id %>% base::setdiff(long_data[,1]), 
+                       start = getAnalysisStart(), 
+                       end = getAnalysisEnd())
   long_data <- rbind(long_data, extra_lines)
   
   # Add event indicators
-  event_inds <- add_event_indicators(long_data, events@data_matrix[,c(1,3,4)], idcolnum = 1)
+  event_inds <- add_event_indicators(long_data, events@data_matrix[,c(1,3,4), drop=FALSE], idcolnum = 1)
   long_data <- cbind(long_data, event_inds)
-  colnames(long_data)[4:(3+length(events@lvls$value))] <- events@lvls$value
+  colnames(long_data)[3 + 1:length(getLevels(events)$value)] <- getLevels(events)$value
   
   # Add drug columns
   drug_cols <- make_drug_columns(long_data, drug_data@data_matrix)
   long_data <- cbind(long_data, drug_cols)
-  colnames(long_data)[(4+length(events@lvls$value)):(4+length(events@lvls$value)+length(drugs@lvls$class)-1)] <- drugs@lvls$class
+  colnames(long_data)[(4+length(getLevels(events)$value)):(4+length(getLevels(events)$value)+length(getLevels(drugs)$class)-1)] <- getLevels(drugs)$class
   
   # Add time-independent variables
-  static_covs_long <- matrix(0, ncol=length(static_covariate_data@lvls$name), nrow=nrow(long_data), dimnames=list(NULL, static_covariate_data@lvls$name))
-  temp <- static_covariates@data_matrix[match(long_data[,"person_id"], static_covariate_data@data_matrix[,"person_id"]), c("name", "value")]
-  for(i in static_covariate_data@lvls$name) {
-    static_covs_long[static_covariate_data@lvls$name[ temp[,"name"] ] == i,i] <- temp[static_covariate_data@lvls$name[ temp[,"name"] ] == i, "value"]
+  static_covs_long <- matrix(0, ncol=length(getLevels(static_covariate_data)$name), nrow=nrow(long_data), dimnames=list(NULL, getLevels(static_covariate_data)$name))
+  temp <- static_covariates@data_matrix[,] %>% {
+    .[match(long_data[,"person_id"], .[,"person_id"]), c("name", "value")]
+  }
+  for(i in getLevels(static_covariate_data)$name) {
+    getLevels(static_covariate_data)$name %>% {static_covs_long[.[ temp[,"name"] ] == i,i] <- temp[.[ temp[,"name"] ] == i, "value"]}
   }
   long_data <- cbind(long_data, static_covs_long)
   
