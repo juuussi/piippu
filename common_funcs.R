@@ -36,3 +36,12 @@ valid_arg <- function(arg, expected_class=NULL, expected_length=NULL, stop_on_fa
   
   return (TRUE)
 }
+
+replace_in <- function(matr, index, value) {
+  matr[index] <- value
+  return (matr)
+}
+na.as <- function(matr, val) {
+  is.na(matr) <- val
+  return (matr)
+}
