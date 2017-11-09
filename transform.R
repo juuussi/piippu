@@ -1,6 +1,6 @@
 #library(strict)
 library(dplyr)
-library(tibble)
+#library(tibble)
 library(stringr)
 library(futile.logger)
 library(lubridate)
@@ -61,16 +61,28 @@ make_long <- function(timeindep_data, drug_data, event_data, static_covariate_da
   colnames(long_data)[(4+length(getLevels(events)$value)):(4+length(getLevels(events)$value)+length(getLevels(drugs)$class)-1)] <- getLevels(drugs)$class
   
   # Add time-independent variables
-  static_covs_long <- matrix(0, ncol=length(getLevels(static_covariate_data)$name), nrow=nrow(long_data), dimnames=list(NULL, getLevels(static_covariate_data)$name))
-  temp <- static_covariates@data_matrix[,] %>% {
-    .[match(long_data[,"person_id"], .[,"person_id"]), c("name", "value")]
-  }
-  for(i in getLevels(static_covariate_data)$name) {
-    getLevels(static_covariate_data)$name %>% {static_covs_long[.[ temp[,"name"] ] == i,i] <- temp[.[ temp[,"name"] ] == i, "value"]}
-  }
+  covars <- getLevels(static_covariate_data)$name
+  vars <- split(static_covariates@data_matrix, static_covariates@data_matrix[,"person_id"], drop=TRUE)
+  vars <- lapply(vars, function(dat) return (matrix(dat, ncol=ncol(static_covariates@data_matrix), dimnames=dimnames(static_covariates@data_matrix))))
+  
+  rows <- lapply(vars, function(id_data) {
+    tmp <- rep(0,length(covars))
+    names(tmp) <- covars
+    tmp[ id_data[,"name", drop=TRUE] ] <- id_data[,"value", drop=TRUE]
+    return (c(id_data[1,"person_id"], tmp))
+    })
+  rows <- do.call(rbind,rows)
+  
+  static_covs_long <- rows[match(long_data[,"person_id"], rows[,"person_id"]),base::setdiff(colnames(rows), "person_id")]
+  
   long_data <- cbind(long_data, static_covs_long)
   
   return (long_data)
+}
+
+#Function for putting data into "within-analysis" format, i.e. resetting time on event
+reset_on_event <- function(data_object, event){
+  
 }
 
 # R wrapper for C++ function Cpp_add_missing_intervals
