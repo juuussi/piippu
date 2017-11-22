@@ -1,3 +1,4 @@
+library("lubridate")
 
 # Check argument for zero length, NULL, NaN or NA value
 valid_arg <- function(arg, expected_class=NULL, expected_length=NULL, stop_on_false=TRUE) {
@@ -44,4 +45,12 @@ replace_in <- function(matr, index, value) {
 na.as <- function(matr, val) {
   is.na(matr) <- val
   return (matr)
+}
+
+to_unix_time <- function(date_strings, tz="UTC") {
+  if(is.vector(date_strings))
+    return (as.integer(as.integer(parse_date_time(date_strings, tz=tz, orders=c("%m/%d/%Y","%d.%m.%Y"), exact=TRUE))/86400))
+  if(is.data.frame(date_strings))
+    return (vapply(date_strings, FUN.VALUE=integer(nrow(date_strings)), 
+                   function(strs) return (as.integer(as.integer(parse_date_time(strs, tz=tz, orders=c("%m/%d/%Y","%d.%m.%Y"), exact=TRUE))/86400))))
 }

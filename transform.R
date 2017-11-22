@@ -6,6 +6,7 @@ library(futile.logger)
 library(lubridate)
 library(survival)
 library(Rcpp)
+library(testthat)
 
 source(base_dir %>% paste0("common_funcs.R"))
 
@@ -24,7 +25,7 @@ make_long <- function(timeindep_data, drug_data, event_data, static_covariate_da
   # Data objects must have correct variable names to avoid mistakes with misordered columns
   if(!colnames(event_data) %>% base::setequal(c("person_id", "start", "stop", "value")))
     stop("Event data must have columns called `person_id`, `start`, `stop` and `value`.")
-  if(!colnames(drug_data) %>% base::setequal(c("person_id", "start", "stop", "class")))
+  if(!colnames(drug_data) %>% base::setequal(c("person_id", "start", "stop", "class", "dose")))
   #if(!all(colnames(drug_data@data_matrix) %in% c("person_id", "start", "stop", "class")))
     stop("Drug data must have columns called `person_id`, `start`, `stop`, `class`.")#, and optionally `dose`.")
   if(!colnames(static_covariate_data) %>% base::setequal(c("person_id", "name", "value")))
@@ -38,12 +39,15 @@ make_long <- function(timeindep_data, drug_data, event_data, static_covariate_da
   #}
   
   event_data <- reorder_columns(event_data, c("person_id", "start", "stop", "value")) 
-  drug_data  <- reorder_columns(drug_data, c("person_id", "start", "stop", "value"))
+  drug_data  <- reorder_columns(drug_data, c("person_id", "start", "stop", "value", "dose"))
   static_covariate_data  <- reorder_columns(static_covariate_data, c("person_id", "name", "value"))
   
-  timedep_data <- rowbind(events, drugs)#asDataObject(timedep_data)
+  timedep_data <- rbind(event_data@data_matrix[,c("person_id", "start", "stop")], drug_data@data_matrix[,c("person_id", "start", "stop")])#asDataObject(timedep_data)
   
-  long_data <- make_all_intervals(timedep_data@data_matrix, idcolnum = 1)
+  num_uniq_events <- length(unique(event_data$value))
+  num_uniq_drugs <- length(unique(drug_data$value))
+  
+  long_data <- make_all_intervals(timedep_data, idcolnum = 1)
   # Add people who have no events or drug usages to data
   extra_lines <- cbind(person_id = timeindep_data$person_id %>% base::setdiff(long_data[,1]), 
                        start = getAnalysisStart(), 
@@ -51,29 +55,45 @@ make_long <- function(timeindep_data, drug_data, event_data, static_covariate_da
   long_data <- rbind(long_data, extra_lines)
   
   # Add event indicators
-  event_inds <- add_event_indicators(long_data, events@data_matrix[,c(1,3,4), drop=FALSE], idcolnum = 1)
+  event_inds <- add_event_indicators(long_data, event_data@data_matrix[,c(1,3,4)], idcolnum = 1)
   long_data <- cbind(long_data, event_inds)
-  colnames(long_data)[3 + 1:length(getLevels(events)$value)] <- getLevels(events)$value
+  colnames(long_data)[3 + 1:num_uniq_events] <- getLevels(event_data)$value
   
   # Add drug columns
   drug_cols <- make_drug_columns(long_data, drug_data@data_matrix)
-  long_data <- cbind(long_data, drug_cols)
-  colnames(long_data)[(4+length(getLevels(events)$value)):(4+length(getLevels(events)$value)+length(getLevels(drugs)$class)-1)] <- getLevels(drugs)$class
+  long_data <- data.frame(cbind(long_data, drug_cols), row.names=NULL)
+  colnames(long_data)[(4+num_uniq_events):(4+num_uniq_events+num_uniq_drugs-1)] <- levels(drug_data$value)
   
   # Add time-independent variables
+  
+  # Check for duplicate or contradictory rows
+  if(NROW(unique(cbind(static_covariate_data@data_matrix[,c("person_id","name")]))) != NROW(static_covariate_data@data_matrix)) {
+    stop("Each static covariate must have only one value for each person.")
+  }
+  
   covars <- getLevels(static_covariate_data)$name
-  vars <- split(static_covariates@data_matrix, static_covariates@data_matrix[,"person_id"], drop=TRUE)
-  vars <- lapply(vars, function(dat) return (matrix(dat, ncol=ncol(static_covariates@data_matrix), dimnames=dimnames(static_covariates@data_matrix))))
+  vars <- split(static_covariate_data@data_matrix, static_covariate_data@data_matrix[,"person_id"], drop=TRUE)
+  vars <- lapply(vars, function(dat) return (matrix(dat, ncol=ncol(static_covariate_data@data_matrix), dimnames=dimnames(static_covariate_data@data_matrix))))
   
   rows <- lapply(vars, function(id_data) {
-    tmp <- rep(0,length(covars))
+    tmp <- rep(NA,length(covars))
     names(tmp) <- covars
     tmp[ id_data[,"name", drop=TRUE] ] <- id_data[,"value", drop=TRUE]
-    return (c(id_data[1,"person_id"], tmp))
+    return (c(id_data[1,"person_id",drop=TRUE], tmp))
     })
   rows <- do.call(rbind,rows)
-  
-  static_covs_long <- rows[match(long_data[,"person_id"], rows[,"person_id"]),base::setdiff(colnames(rows), "person_id")]
+  static_covs_long <- rows[match(long_data$person_id, rows[,"person_id",drop=TRUE]),base::setdiff(colnames(rows), "person_id")]
+  #static_covs_long[,] <- getLevels(static_covariate_data)$value[static_covs_long]
+  if(!is.null(getLevels(static_covariate_data)$value))
+    static_covs_long <- do.call(cbind, lapply(1:NCOL(static_covs_long), function(col) {
+      l <- getLevels(static_covariate_data)$value
+      if(!is.null(l)) {
+        return (l[static_covs_long[,col,drop=TRUE] ])
+      }
+    }))
+  #static_covs_long <- getLevels(static_covariate_data)
+  rownames(static_covs_long) <- NULL
+  colnames(static_covs_long) <- getLevels(static_covariate_data)$name
   
   long_data <- cbind(long_data, static_covs_long)
   
@@ -173,11 +193,5 @@ reinsert_NAs <- function(data, cols=1:ncol(data), ...) {
 }
 
 
-to_unix_time <- function(date_strings, tz="UTC") {
-  if(is.vector(date_strings))
-    return (as.integer(as.integer(parse_date_time(date_strings, tz=tz, orders=c("%m/%d/%Y","%d.%m.%Y"), exact=TRUE))/86400))
-  if(is.data.frame(date_strings))
-    return (vapply(date_strings, FUN.VALUE=integer(nrow(date_strings)), 
-                   function(strs) return (as.integer(as.integer(parse_date_time(strs, tz=tz, orders=c("%m/%d/%Y","%d.%m.%Y"), exact=TRUE))/86400))))
-}
+
 

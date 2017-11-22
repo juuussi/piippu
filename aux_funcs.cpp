@@ -128,7 +128,7 @@ NumericVector Cpp_add_med_col(NumericMatrix data, NumericMatrix meddata) {
   for(int j = 0; j < data.nrow(); j++) {
     for(int i = 0; i < meddata.nrow(); i++) {
       if(data(j,0) == meddata(i,0) && data(j,1) >= meddata(i,1) && data(j,2) <= meddata(i,2)) {
-        result(j) = meddata(i,3);
+        result(j) = meddata(i,4);
       }
     }
   }

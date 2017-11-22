@@ -1,4 +1,9 @@
 # A class that keeps data as a numeric matrix and stores separately factors and strings coded as levels.
+# This is useful because
+# - C++-interface stays simple (not deal with dataframes) and 
+# - cache locality is improved (data.frames don't have a contiguous memory representation)
+#   + can store matrices by-row (as they are mostly referenced by-row)
+
 library("methods")
 
 setClass("DataObject", 
@@ -113,7 +118,7 @@ setColumn <- function(object, i,j, value) {
 
 getLevels <- function(x) {
   valid_arg(x, expected_class="DataObject", expected_length=1, stop_on_false=TRUE)
-  return (x@lvls)
+  return(x@lvls)
 }
 rowbind <- function(x,y, deparse.level=0) {
   if(ncol(x@data_matrix) != ncol(y@data_matrix)) stop("number of columns of matrices must match")
@@ -137,10 +142,9 @@ setMethod(`[`, signature=c("DataObject"), definition=function(x, i, j, drop) {
   if(missing(j)) j <- colnames(x@data_matrix)
   if(missing(i)) i <- 1:nrow(x@data_matrix)
   
-  if(!drop) {
-    return (DataObject(data_matrix = x@data_matrix[i,j, drop=FALSE], lvls=x@lvls[j]))
+  if(length(j) != 1) {
+    return (DataObject(data_matrix = x@data_matrix[i,j, drop=drop], lvls=x@lvls[j]))
   } else {
-    if(length(j) != 1) stop("drop=TRUE but length(j) != 1") 
     if(!is.character(j)) j <- colnames(x@data_matrix)[j]
     return (getColumn(x,j)[i])
   }
