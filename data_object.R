@@ -1,6 +1,6 @@
 # A class that keeps data as a numeric matrix and stores separately factors and strings coded as levels.
 # This is useful because
-# - C++-interface stays simple (not deal with dataframes) and 
+# - C++-interface stays simple (does not deal with dataframes) and 
 # - cache locality is improved (data.frames don't have a contiguous memory representation)
 #   + can store matrices by-row (as they are mostly referenced by-row)
 
@@ -16,32 +16,40 @@ DataObject <- function(data_matrix, lvls=list()) {
   return (temp)
 }
 
-asDataObject <- function(dataframe) {
+asDataObject <- function(df) {
   
-  if(!is.data.frame(dataframe)) stop("Input must be a data.frame.")
+  if(!is.data.frame(df)) stop("Input must be a data.frame.")
   
-  dataframe <- data.frame(as.list(dataframe), stringsAsFactors = TRUE)
-  lvls <- lapply(dataframe[,vapply(FUN.VALUE=logical(1), dataframe, is.factor), drop=FALSE], FUN=levels)
-  dataframe[, vapply(FUN.VALUE=logical(1), dataframe, is.factor)] <- lapply(dataframe[, vapply(FUN.VALUE=logical(1), dataframe, is.factor),drop=FALSE], FUN=unclass)
-  data_matrix <- data.matrix(dataframe)
-  colnames(data_matrix) <- colnames(dataframe)
+  df <- data.frame(as.list(df), stringsAsFactors = TRUE)
+  factorcols <- vapply(FUN.VALUE=logical(1), df, is.factor)
+  
+  lvls <- lapply(df[, factorcols, drop=FALSE], FUN=levels)
+  df[, factorcols] <- lapply(df[, factorcols, drop=FALSE], FUN=unclass)
+  data_matrix <- data.matrix(df)
+  colnames(data_matrix) <- colnames(df)
   
   return (DataObject(data_matrix = data_matrix, lvls = lvls))
 }
 
 add_column <- function(object, name, values) {
+  
+  if(is.character(values)) {
+    values <- factor(values)
+  } 
   if(is.factor(values)) {
-    object@lvls <- c(object@lvls, levels(values))
+    object@lvls <- c(object@lvls, list(levels(values)))
+    names(object@lvls)[length(object@lvls)] <- name
     object@data_matrix <- cbind(object@data_matrix, unclass(values))
   }
-  else 
+  else {
     object@data_matrix <- cbind(object@data_matrix, values)
+  }
     
   colnames(object@data_matrix)[ncol(object@data_matrix)] <- name
   
   return(object)
 }
-# TODO: implement proper method dispatch
+
 rename_column <- function(object, orig_col, new_col) {
   
   valid_arg(object, expected_class="DataObject", expected_length=1, stop_on_false=TRUE)
@@ -54,7 +62,6 @@ rename_column <- function(object, orig_col, new_col) {
   return(object)
 }
 
-#TODO: fix to camelcase when proper dispatch exists
 reorder_columns <- function(object, new_order) {
   if(!base::setequal(new_order, colnames(object@data_matrix))) 
     stop("Column names in new_order do not match internal column names.")
@@ -85,19 +92,19 @@ combine_factor_codes <- function(int_x,int_y, lvls_x, lvls_y) {
   return( list(codes=c(int_x,int_y), levels=lvls) )
 }
 
-filter_out_data <- function(object, column, vals) {
-  
-  valid_arg(object, expected_class="DataObject", expected_length=1, stop_on_false=TRUE)
-  valid_arg(column, expected_class="character", expected_length=1, stop_on_false=TRUE)
-  valid_arg(vals, expected_class="integer", stop_on_false=TRUE)
-  
-  # Remove rows with values in `vals`
-  object@data_matrix <- object@data_matrix[!(object@data_matrix[,column, drop=TRUE] %in% vals),]
-  # TODO: Consider if revising levels is necessary
-  #object$lvls < object$lvls[]
-  return (object)
-  
-}
+# filter_out_data <- function(object, column, vals) {
+#   
+#   valid_arg(object, expected_class="DataObject", expected_length=1, stop_on_false=TRUE)
+#   valid_arg(column, expected_class="character", expected_length=1, stop_on_false=TRUE)
+#   valid_arg(vals, expected_class="integer", stop_on_false=TRUE)
+#   
+#   # Remove rows with values in `vals`
+#   object@data_matrix <- object@data_matrix[!(object@data_matrix[,column, drop=TRUE] %in% vals),]
+#   # TODO: Consider if revising levels is necessary
+#   #object$lvls < object$lvls[]
+#   return (object)
+#   
+# }
 
 getColumn <- function(x, name) {
   if(!(name %in% colnames(x@data_matrix))) return(NULL)
@@ -107,13 +114,29 @@ getColumn <- function(x, name) {
 
 setColumn <- function(object, i,j, value) {
   if(length(j) > 1) stop("j is of >1 length")
-  if(is.null(object@lvls[[j]]) == !is.factor(value)) stop("Type mismatch")
-  if(is.factor(value)) {
-    object@lvls <- c(object@lvls[[j]], setdiff(levels(value), object@lvls[[j]]))
-    value <- factor(value, object@lvls)
+  if(!is.character(j)) 
+    j <- colnames(object)[j]
+  
+  val_char <- is.factor(value) || is.character(value)
+  if(!val_char && !is.integer(value)) {
+    stop("Numeric values must be of type `integer`.")
+  } 
+  
+  if(is.null(object@lvls[[ j ]]) == val_char) stop("Type mismatch")
+  if(val_char) {
+    # append additional levels so we don't have to change any existing values
+    if(is.factor(value)) {
+      val_lvls <- levels(value)
+    } else {
+      val_lvls <- unique(value)
+    }
+    object@lvls[[j]] <- c(object@lvls[[ j ]], base::setdiff(val_lvls, object@lvls[[ j ]]))
+    value <- factor(value, object@lvls[[j]])
     value <- unclass(value)
+    # we may have unused factor levels now, but this can be fixed when truly necessary 
   }
-  object@data_matrix[i,column] <- value
+  object@data_matrix[i,j] <- value
+  return (object)
 }
 
 getLevels <- function(x) {
@@ -138,6 +161,17 @@ rowbind <- function(x,y, deparse.level=0) {
 }
 
 setMethod(`$`, signature=c("DataObject"), definition=getColumn)
+setMethod(`$<-`, signature=c("DataObject"), definition=function(x, name, value) {
+  if(!name %in% colnames(x)) 
+  {
+    object <- add_column(x, name, value)
+    return (object)
+  }
+  else {
+    x[,name] <- value
+    return (x)
+  }
+})
 setMethod(`[`, signature=c("DataObject"), definition=function(x, i, j, drop) {
   if(missing(j)) j <- colnames(x@data_matrix)
   if(missing(i)) i <- 1:nrow(x@data_matrix)
@@ -152,13 +186,35 @@ setMethod(`[`, signature=c("DataObject"), definition=function(x, i, j, drop) {
 
 setMethod(`[<-`, signature=c("DataObject"), definition=function(x, i, j, value) {
   if(missing(j)) j <- colnames(x@data_matrix)
-  if(missing(i)) i <- 1:nrow(x@data_matrix)
+  if(missing(i)) i <- 1:NROW(x@data_matrix)
   
-  if (!is.character(j)) j <- colnames(x@data_matrix)[j]
-  fctrs <- vapply(FUN.VALUE=logical(1), 1:ncol(value), function(z) is.factor(value[,z]))
+  
+  if(!is.data.frame(value) && !is.character(value)) {
+    if(!is.integer(value)) {
+      stop("Numeric values must be of type `integer`.")
+    } else {
+      value <- as.matrix(value)
+    }
+  }
+  else {
+    # There has to be a better way to do this
+    if(is.data.frame(value))
+      value <- data.frame(as.list(value), stringsAsFactors=TRUE)
+    else # is character vector
+      value <- data.frame(value, stringsAsFactors=TRUE)
+  }
+  
+  if (!is.character(j)) {
+    j <- colnames(x)[j]
+  }
+  
+  fctrs <- vapply(FUN.VALUE=logical(1), 1:NCOL(value), function(z) is.factor(value[,z,drop=TRUE]))
+  
   if(any(fctrs)) {
-    for(k in seq_along(j)) setColumn(x, i,j[k], v[k])
-  } else x@data_matrix[i,j] <- value
+    for(k in seq_along(j)) {
+      x <- setColumn(x, i,j[k], value[, k, drop=TRUE])
+    }
+  } else x@data_matrix[i,j] <- as.matrix(value)
   
   return(x)
 })
@@ -170,4 +226,20 @@ setMethod("ncol", signature="DataObject", definition=function(x) {
 })
 setMethod("colnames", signature="DataObject", definition=function(x) {
   return (colnames(x@data_matrix))
+})
+
+setMethod("as.data.frame", signature="DataObject", definition=function(x) {
+  df <- data.frame(lapply(1:NCOL(x@data_matrix), 
+                    function(column) {
+                      collvls <- x@lvls[[colnames(x)[column]]]
+                      if(!is.null(collvls)) 
+                        return (collvls[x@data_matrix[,column,drop=FALSE]])
+                      else 
+                        return (x@data_matrix[,column, drop=FALSE])
+                    }), stringsAsFactors=FALSE)
+  colnames(df) <- colnames(x)
+  return(df)
+})
+setMethod("head", signature="DataObject", definition=function(x,n=6L) {
+  return (DataObject(head(x@data_matrix, n), lvls=getLevels(x)))
 })
