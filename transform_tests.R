@@ -1,11 +1,11 @@
 
 rm(list=ls(all.names=TRUE))
 
-library(strict)
+#library(strict)
 library(dplyr)
 library(readr)
 library(survival)
-library(tables)
+#library(tables)
 library(futile.logger)
 
 options(warn=1)
@@ -64,7 +64,7 @@ expect_error({
     
   )
   
-  long_testdata <- make_long(asDataObject(subject_testdata), asDataObject(drug_testdata), asDataObject(event_testdata), asDataObject(static_testdata))
+  wide_testdata <- make_wide(asDataObject(subject_testdata), asDataObject(drug_testdata), asDataObject(event_testdata), asDataObject(static_testdata))
   
 }, message="Each static covariate must have only one value for each person")
 
@@ -73,20 +73,35 @@ expect_silent({
   static_testdata <- data.frame(
     person_id = c(63,41,59,44,60,18,4,2,42,43),
       #c(4,79,79,44,90,14,42,73,82,82,43,14,90,71,64,90,41,71,82,82,42,90,90,14,18,90,4,82,42,59,4,82,82,18,18,82,82,44,43,90,14,2,82,14,82,90,60,82,14,63),
-    name=c("Var3","Var1","Var1","Var1","Var2","Var1","Var2","Var1","Var1","Var2"),
+    name=c("Var3","Var1","Var1","Var1","Var2","Var1","Var2","Var1","Var1","Var3"),
     value=c("No", "Yes","Yes","No", "No", "Yes","Yes","No", "No", "No"),
     stringsAsFactors=FALSE
     
   )
   
-  long_testdata <- make_long(asDataObject(subject_testdata), asDataObject(drug_testdata), asDataObject(event_testdata), asDataObject(static_testdata))
-  
+  wide_testdata <- make_wide(asDataObject(subject_testdata), asDataObject(drug_testdata), asDataObject(event_testdata), asDataObject(static_testdata))
+  wide_testdata <- wide_testdata[with(wide_testdata, order(person_id, start,stop)),, drop=FALSE]
+  row.names(wide_testdata) <- NULL #for comparing to manual_data
 })
-# expected_data <- data.frame(
-#   person_id = c(
-# )
-# expect_true( {
-#   all(long_testdata == 
-#         matrix(
-#         )
-# })
+manual_data <- data.frame(
+  person_id=c(1, 2, 2, 2, 3, 3, 3, 4, 4, 4, 14, 14, 14, 14, 14, 14, 18, 18, 18, 18, 28, 41, 41, 41, 41, 42, 42, 42, 43, 43, 43, 43, 90, 90, 90),
+  start=c(10957, 411, 8613, 10957, 304, 6420, 10957, 276, 338, 2543, 994, 1052, 3474, 6861, 9682, 10957, 383, 384, 2665, 10757, 10957, 493, 719, 720, 2468, 872, 3515, 10957, 337, 338, 5429, 8249, 622, 5181, 5182),
+  stop=c(15705, 8613, 10957, 14498, 6420, 10957, 11428, 338, 2543, 10957, 1052, 3474, 6861, 9682, 10957, 17245, 384, 2665, 10757, 10957, 15705, 719, 720, 2468, 10957, 3515, 10957, 12245, 338, 5429, 8249, 10957, 5181, 5182, 10957),
+  Event1=c(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0),
+  Event2=c(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0),
+  Event3=c(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+  Drug=c(0, 0, 1.5, 1.5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6.5, 6.5, 0, 0, 0, 0, 0, 7.5, 7.5, 7.5, 0, 0, 8.5, 8.5, 0, 0, 9.5, 0, 0, 0, 0),
+  Drug_3=c(0, 0, 0, 0, 0, 2.5, 2.5, 0, 3.5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4.5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+  Drug_two=c(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5.5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+  Var1=c(NA, "No", "No", "No", NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, "Yes", "Yes", "Yes", "Yes", NA, "Yes", "Yes", "Yes", "Yes", "No", "No", "No", NA, NA, NA, NA, NA, NA, NA),
+  Var2=c(NA, NA, NA, NA, NA, NA, NA, "Yes", "Yes", "Yes", NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA,NA),
+  Var3=c(NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, "No","No","No","No", NA, NA, NA),
+  stringsAsFactors=TRUE
+)
+#rownames(manual_data) <- NULL
+
+  
+expect_equal(wide_testdata, manual_data)
+
+resetted_testdata <- reset_on_event(wide_testdata, "Event1")
+#manual_reset_data <- data.frame(

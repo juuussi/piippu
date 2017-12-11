@@ -14,7 +14,7 @@ Rcpp::sourceCpp(base_dir %>% paste0("aux_funcs.cpp"))
 
 #TODO: use dplyr more
 
-make_long <- function(timeindep_data, drug_data, event_data, static_covariate_data) {
+make_wide <- function(timeindep_data, drug_data, event_data, static_covariate_data) {
   
   valid_arg(timeindep_data, expected_class="DataObject", stop_on_false=TRUE)
   valid_arg(drug_data, expected_class="DataObject", stop_on_false=TRUE)
@@ -47,22 +47,22 @@ make_long <- function(timeindep_data, drug_data, event_data, static_covariate_da
   num_uniq_events <- length(unique(event_data$value))
   num_uniq_drugs <- length(unique(drug_data$value))
   
-  long_data <- make_all_intervals(timedep_data, idcolnum = 1)
+  wide_data <- make_all_intervals(timedep_data, idcolnum = 1)
   # Add people who have no events or drug usages to data
-  extra_lines <- cbind(person_id = timeindep_data$person_id %>% base::setdiff(long_data[,1]), 
+  extra_lines <- cbind(person_id = timeindep_data$person_id %>% base::setdiff(wide_data[,1]), 
                        start = getAnalysisStart(), 
                        end = getAnalysisEnd())
-  long_data <- rbind(long_data, extra_lines)
+  wide_data <- rbind(wide_data, extra_lines)
   
   # Add event indicators
-  event_inds <- add_event_indicators(long_data, event_data@data_matrix[,c(1,3,4)], idcolnum = 1)
-  long_data <- cbind(long_data, event_inds)
-  colnames(long_data)[3 + 1:num_uniq_events] <- getLevels(event_data)$value
+  event_inds <- add_event_indicators(wide_data, event_data@data_matrix[,c(1,3,4)], idcolnum = 1)
+  wide_data <- cbind(wide_data, event_inds)
+  colnames(wide_data)[3 + 1:num_uniq_events] <- getLevels(event_data)$value
   
   # Add drug columns
-  drug_cols <- make_drug_columns(long_data, drug_data@data_matrix)
-  long_data <- data.frame(cbind(long_data, drug_cols), row.names=NULL)
-  colnames(long_data)[(4+num_uniq_events):(4+num_uniq_events+num_uniq_drugs-1)] <- levels(drug_data$value)
+  drug_cols <- make_drug_columns(wide_data, drug_data@data_matrix)
+  wide_data <- data.frame(cbind(wide_data, drug_cols), row.names=NULL)
+  colnames(wide_data)[(4+num_uniq_events):(4+num_uniq_events+num_uniq_drugs-1)] <- levels(drug_data$value)
   
   # Add time-independent variables
   
@@ -82,27 +82,75 @@ make_long <- function(timeindep_data, drug_data, event_data, static_covariate_da
     return (c(id_data[1,"person_id",drop=TRUE], tmp))
     })
   rows <- do.call(rbind,rows)
-  static_covs_long <- rows[match(long_data$person_id, rows[,"person_id",drop=TRUE]),base::setdiff(colnames(rows), "person_id")]
-  #static_covs_long[,] <- getLevels(static_covariate_data)$value[static_covs_long]
+  static_covs_wide <- rows[match(wide_data$person_id, rows[,"person_id",drop=TRUE]),base::setdiff(colnames(rows), "person_id")]
+  #static_covs_wide[,] <- getLevels(static_covariate_data)$value[static_covs_wide]
   if(!is.null(getLevels(static_covariate_data)$value))
-    static_covs_long <- do.call(cbind, lapply(1:NCOL(static_covs_long), function(col) {
+    static_covs_wide <- do.call(cbind, lapply(1:NCOL(static_covs_wide), function(col) {
       l <- getLevels(static_covariate_data)$value
       if(!is.null(l)) {
-        return (l[static_covs_long[,col,drop=TRUE] ])
+        return (l[static_covs_wide[,col,drop=TRUE] ])
       }
     }))
-  #static_covs_long <- getLevels(static_covariate_data)
-  rownames(static_covs_long) <- NULL
-  colnames(static_covs_long) <- getLevels(static_covariate_data)$name
+  #static_covs_wide <- getLevels(static_covariate_data)
+  rownames(static_covs_wide) <- NULL
+  colnames(static_covs_wide) <- getLevels(static_covariate_data)$name
   
-  long_data <- cbind(long_data, static_covs_long)
+  wide_data <- cbind(wide_data, static_covs_wide)
+  rownames(wide_data) <- NULL
   
-  return (long_data)
+  return (wide_data)
 }
 
-#Function for putting data into "within-analysis" format, i.e. resetting time on event
-reset_on_event <- function(data_object, event){
+# Function for putting data into "within-analysis" format, i.e. resetting time on event; to be run on wide-format data.
+# The reset type-option uses nomenclature from "Regression modeling of time to event data, second edition" by Hosmer, Lemeshow and May,
+# as used on the page https://stats.idre.ucla.edu/sas/faq/how-can-i-model-repeated-events-survival-analysis-in-proc-phreg/ .
+reset_on_event <- function(data, event, event_occurrence_marker=1, reset_type="Conditional model A") {
   
+  cols <- c("person_id", "start","stop",event)
+  if(! all(cols %in% colnames(data))) 
+    stop("Data must have columns `person_id`, `start`, `stop` and a column named by the event parameter.")
+  
+  if(! reset_type %in% c("Conditional model A", "Conditional model B") ) 
+    stop("Reset type must be `Conditional model A` or `Conditional model B`.")
+  
+  # Add stratum column
+  data <- cbind(data, stratum=rep(NA, NROW(data)))
+  
+  # Reorder
+  data <- data[,c(cols, "stratum", base::setdiff(colnames(data), c(cols,"stratum"))), drop=FALSE]
+  
+  id_data <- split(data, data$person_id)
+  reset <- lapply(id_data, function(d) {
+    
+    d <- d[order(d$start), ,drop=FALSE]
+    
+    # Reset first interval to start from 0
+    d[,2:3] <- d[,2:3,drop=FALSE] - min(d[,2,drop=TRUE])
+    
+    # Stratum is set to correspond to the "ordinal" of the event, e.g. first, second ...
+    event.num <- 1
+    
+    for(r in 1:(max(1,NROW(d)-1))) {
+      
+      # Event occurence -> reset next interval to start from 0
+      elem <- d[r,4,drop=TRUE]
+      
+      d[,5] <- event.num
+      if(elem == event_occurrence_marker) {
+        
+        if(reset_type == "Conditional model B") {
+          # In these two models, time is reset to 0 after each event. 
+          d[(r+1):NROW(d), 2:3] <- d[(r+1):NROW(d), 2:3] - d[r, 3, drop=TRUE]
+        }
+        event.num <- event.num + 1
+        
+      }
+      
+    }
+    return (d)
+  })
+  data <- do.call(rbind, reset)
+  return (data)
 }
 
 # R wrapper for C++ function Cpp_add_missing_intervals

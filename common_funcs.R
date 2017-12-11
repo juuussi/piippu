@@ -42,9 +42,23 @@ replace_in <- function(matr, index, value) {
   matr[index] <- value
   return (matr)
 }
-na.as <- function(matr, val) {
-  is.na(matr) <- val
-  return (matr)
+na.as <- function(x, val) {
+  if(is.matrix(x))
+    is.na(x) <- val
+  if(is.data.frame(x) || is.list(x)) {
+    x[] <- lapply(x, function(column) {
+      column[is.na(column)] <- val
+      return (column)
+    })
+  }
+
+  return (x)
+}
+drop_col <- function(dataframe, column) {
+  if(is.character(column))
+    return (dataframe[,base::setdiff(colnames(dataframe), column)])
+  if(is.integer(column))
+    return (dataframe[,-column])
 }
 
 to_unix_time <- function(date_strings, tz="UTC") {

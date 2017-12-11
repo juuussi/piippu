@@ -1,0 +1,14 @@
+analysis_start_date=1.1.2000
+analysis_end_date=31.12.2012
+subjects_file=
+static_covariates_file=
+drugs_file=
+events_file=
+blackbox_file=
+blackbox_filters=
+outcome=Event1
+predictor=Drug
+outcome_proper=Test event
+predictor_proper=Test drug
+adjust_for=Var1,Var2
+log_file=~/projects/piippu/piippu_testlog.log
