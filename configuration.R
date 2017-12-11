@@ -39,7 +39,7 @@ getFiles <- function() {
               static_covariates_file = .config@values$static_covariates_file)
          )
 }
-getOption <- function (option) {
+getConfOption <- function (option) {
   if(!exists(".config")) stop("Configuration object does not exist. Use the function `Configuration` to initialize one.")
   valid_arg(option, expected_class="character", expected_length=1, stop_on_false=TRUE)
   
