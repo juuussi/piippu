@@ -42,6 +42,8 @@ add_column <- function(object, name, values) {
     object@data_matrix <- cbind(object@data_matrix, unclass(values))
   }
   else {
+    if(!is.integer(values)) 
+      stop("Values must be of type `integer`.")
     object@data_matrix <- cbind(object@data_matrix, values)
   }
     
