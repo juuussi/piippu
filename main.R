@@ -64,7 +64,7 @@ events <- rename_column(events, "date", "start")
 events <- rename_column(events, "date.1", "stop")
 
 if(!"dose" %in% colnames(drugs))
-  drugs <- add_column(drugs, "dose", rep(1, nrow(data$drugs_file)))
+  drugs <- add_column(drugs, "dose", rep(1L, nrow(data$drugs_file)))
 
 # Remove drug uses that are not linked to subjects
 drug_users_in_subjects <- drugs$person_id %in% subjects$person_id
@@ -141,7 +141,7 @@ censor <- function(timeline_data, censoring_data) {
   if(!all(c("person_id", "start", "stop") %in% colnames(timeline_data))) 
     stop("timeline_data must have columns `person_id`, `start`, `stop`.")
   
-  censoring_vars <- as.list(censoring_data %>% drop_col("person_id")) %>% na.as(Inf)
+  censoring_vars <- as.list(censoring_data %>% drop_col("person_id")) %>% na.as(.Machine$integer.max)
   mins <- do.call(pmin, censoring_vars)
   
   ind <- match(timeline_data$person_id, unique(censoring_data$person_id))
@@ -170,9 +170,24 @@ censor <- function(timeline_data, censoring_data) {
   flog.info(paste0("Removed ", orignumdrugs - nrow(drugs), "/", orignumdrugs, " drugs."))
 }
 
-#flog.info(
+flog.info("Converting to counting process format:")
 wide_data <- make_wide(subjects, drugs, events, static_covariates)
 wide_data <- data.frame(wide_data)
+flog.info("Done.")
+
+count_person_years <- function(data) {
+  intvals <- data$stop - data$start
+  return (sum(intvals) / 365)
+}
+
+flog.info(paste0("Number of unique subject ids in data: ", length(unique(wide_data[,"person_id", drop=TRUE]))))
+flog.info(paste0("Total person-years: ", count_person_years(wide_data)))
+flog.info(paste0("Person-years with ", predictor, ": ", count_person_years(wide_data[wide_data[[predictor]]==0,])))
+flog.info(paste0("Person-years without ", predictor, ": ", count_person_years(wide_data[wide_data[[predictor]]!=1,])))
+
+flog.info(paste0("Analysis type is selected as ", 
+                 c("`first event only`", "`normal`", paste0("resetting with ", getConfOption("reset_type")))[as.integer(getConfOption("analysis_type"))]))
+flog.info(paste0("Starting analysis: "))
 
 if(getConfOption("analysis_type") == 1) {
   # Censor after first event
@@ -247,18 +262,8 @@ if(getConfOption("analysis_type") == 1) {
   exp(confint(model))
   
 }
+flog.info("Done.")
 
-
-count_person_years <- function(data) {
-  intvals <- data$stop - data$start
-  return (sum(intvals) / 365)
-}
-
-count_person_years(wide_data)
-count_person_years(wide_data[wide_data$ANYSTROKE==0,])
-count_person_years(wide_data[wide_data$ANYSTROKE==1,])
-
-length(unique(wide_data[,"person_id", drop=TRUE]))
 
 #tabl <- build_table(outcome, predictor, wide_data)
 #print_table(tabl)
