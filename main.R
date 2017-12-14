@@ -41,7 +41,8 @@ flog.info("Done.")
 
 # Transform units to day-precision Unix time (days after 1.1.1970)
 flog.info("Transforming dates to Unix time: ")
-data$events_file[c("date")] <- do.call(cbind, lapply(data$events_file[,c("date"),drop=FALSE], to_unix_time))
+data$subjects_file[,c("dob", "deathdate", "cohort_entry")] <- do.call(cbind, lapply(data$subjects_file[,c("dob", "deathdate", "cohort_entry"),drop=FALSE], to_unix_time))
+data$events_file[,c("date")] <- do.call(cbind, lapply(data$events_file[,c("date"),drop=FALSE], to_unix_time))
 data$drugs_file[,c("start","stop")] <- do.call(cbind, lapply(data$drugs_file[,c("start","stop")], to_unix_time))
 data$blackbox_file[,c("start")] <- data$blackbox_file[,"start",drop=TRUE] %>% to_unix_time 
 flog.info("Done.")
@@ -55,8 +56,8 @@ outcome <- getConfOption("outcome")
 predictor <- getConfOption("predictor")
 
 
-subjects <- asDataObject(data$subjects_file[c("person_id","sex", "dob", "deathdate")])
-static_covariates <- asDataObject(data$static_covariates_file[,c("person_id", "name", "value")])
+subjects <- asDataObject(data$subjects_file)
+static_covariates <- asDataObject( data$static_covariates_file[,c("person_id", "name", "value")] )
 drugs    <- asDataObject(data$drugs_file)
 events <- asDataObject(data$events_file[,c("person_id", "date", "date", "event")])
 events <- rename_column(events, "event", "value")
@@ -175,6 +176,11 @@ wide_data <- make_wide(subjects, drugs, events, static_covariates)
 wide_data <- data.frame(wide_data)
 flog.info("Done.")
 
+# Add static cov. columns from subject data
+wide_data <- cbind(wide_data, 
+      drop_col(as.data.frame(subjects)[match(wide_data$person_id, subjects$person_id),], "person_id")
+)
+
 count_person_years <- function(data) {
   intvals <- data$stop - data$start
   return (sum(intvals) / 365)
@@ -185,13 +191,40 @@ flog.info(paste0("Total person-years: ", count_person_years(wide_data)))
 flog.info(paste0("Person-years with ", predictor, ": ", count_person_years(wide_data[wide_data[[predictor]]==0,])))
 flog.info(paste0("Person-years without ", predictor, ": ", count_person_years(wide_data[wide_data[[predictor]]!=1,])))
 
+write_stats <- function(data) {
+  
+  fname <- paste0(getConfOption("output_folder"), "/", c("_stats.txt"))
+  lns <- c(paste0("Total events: \t", sum(data[[outcome]] == 1)),
+           paste0("Total subjects\t:", length(unique(data$person_id))),
+           paste0("Total person-years:\t",count_person_years(data)),
+           paste0("Person-years with ", predictor, ": ", count_person_years(data[data[[predictor]]==0,])),
+           paste0("Person-years without ", predictor, ": ", count_person_years(data[data[[predictor]]!=1,])))
+  writeLines(lns, fname, "\r\n")
+  
+}
+
+write_stats(wide_data)
+  
 flog.info(paste0("Analysis type is selected as ", 
                  c("`first event only`", "`normal`", paste0("resetting with ", getConfOption("reset_type")))[as.integer(getConfOption("analysis_type"))]))
 flog.info(paste0("Starting analysis: "))
 
-if(getConfOption("analysis_type") == 1) {
-  # Censor after first event
+summary_frame <- function(model) {
+  s <- summary(model)
+  d <- data.frame(s$coefficients, confint(model), exp(confint(model)))
+  colnames(d) <- c("Coef", "Exp. coef", "coef SE", "Robust SE", "z-value", "p-value", "Haz. 2.5%", "Hz. 97.5%", "Exp. 2.5%", "Exp. 97.5%")
+  return(d)
+}
+
+write_results <- function(model, prefix) {
   
+  fname <- paste0(getConfOption("output_folder"), "/", prefix, c("_summary.csv"))
+  write.table(summary_frame(model), fname, sep=";", row.names=TRUE)
+  
+}
+if(getConfOption("analysis_type") == 1) {
+  
+  # Censor after first event
   split_outcomes <- split(wide_data, wide_data$person_id)
   split_outcomes <- lapply(split_outcomes, function(x) { 
     stops <- x$stop
@@ -204,23 +237,22 @@ if(getConfOption("analysis_type") == 1) {
     x <- x[!subseq_events,,drop=FALSE]# <- 0
     return (x)
   })
+  
   wide_data <- do.call(rbind, split_outcomes)
   
   # Unadjusted model
   model <- #lax( 
     coxph(as.formula(paste0("Surv(start, stop, ",getConfOption("outcome"),") ~ ", getConfOption("predictor"), " + cluster(person_id)")), wide_data) 
   #)
-  summary(model)
-  confint(model)
-  exp(confint(model))
   
+  write_results(model, "unadjusted")
   # Adjusted model
   model <- #lax( 
     coxph(as.formula(paste0("Surv(start, stop, ",getConfOption("outcome"),") ~ ", getConfOption("predictor"), " + cluster(person_id) +", paste(getConfOption("adjust_for"),collapse="+"))), wide_data) 
   #)
-  summary(model)
-  confint(model)
-  exp(confint(model))
+
+  write_results(model, "adjusted")
+  
 } else if (getConfOption("analysis_type") == 2) {
   # Multiple events allowed
   
@@ -228,17 +260,12 @@ if(getConfOption("analysis_type") == 1) {
   model <- #lax( 
     coxph(as.formula(paste0("Surv(start, stop, ",getConfOption("outcome"),") ~ ", getConfOption("predictor"), " + cluster(person_id)")), wide_data) 
   #)
-  summary(model)
-  confint(model)
-  exp(confint(model))
-  
+  write_results(model, "unadjusted")
   # Adjusted model
   model <- #lax( 
     coxph(as.formula(paste0("Surv(start, stop, ",getConfOption("outcome"),") ~ ", getConfOption("predictor"), " + cluster(person_id) +", paste(getConfOption("adjust_for"),collapse="+"))), wide_data) 
   #)
-  summary(model)
-  confint(model)
-  exp(confint(model))
+  write_results(model, "adjusted")
   
 } else if (getConfOption("analysis_type") == 3) {
   
@@ -249,18 +276,12 @@ if(getConfOption("analysis_type") == 1) {
   model <- #lax( 
     coxph(as.formula(paste0("Surv(start, stop, ",getConfOption("outcome"),") ~ ", getConfOption("predictor"), " + cluster(person_id) + cluster(stratum)")), resetted_data) 
   #)
-  summary(model)
-  confint(model)
-  exp(confint(model))
-  
+  write_results(model, "unadjusted")
   # Adjusted model
   model <- #lax( 
     coxph(as.formula(paste0("Surv(start, stop, ",getConfOption("outcome"),") ~ ", getConfOption("predictor"), " + cluster(person_id) + cluster(stratum) + ", paste(getConfOption("adjust_for"),collapse="+"))), resetted_data) 
   #)
-  summary(model)
-  confint(model)
-  exp(confint(model))
-  
+  write_results(model, "adjusted")
 }
 flog.info("Done.")
 
