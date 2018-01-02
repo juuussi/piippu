@@ -24,6 +24,10 @@ flog.info("Reading configuration file.")
 # Set configuration
 readConfigFile(base_dir %>% paste0("piippu_config"))
 
+if(!getConfOption("analysis_type") %in% c("First event", "Resetting on event", "Counting process")) {
+  stop("Option `analysis_type` must be one of `First event`, `Resetting on event`, `Counting process`.")
+}
+
 # Set logging file
 flog.appender(appender.file(getConfOption("log_file")))
 flog.threshold(TRACE)
@@ -234,7 +238,7 @@ flog.info(paste0("Person-years without ", predictor[1], ": ", count_person_years
 
 write_stats <- function(data) {
   
-  fname <- paste0(getConfOption("output_folder"), "/", c("_stats.txt"))
+  fname <- paste0(getConfOption("output_folder"), "/", c("stats.txt"))
   lns <- c(paste0("Total events: \t", sum(data[[outcome]] == 1)),
            paste0("Total subjects\t:", length(unique(data$person_id))),
            paste0("Total person-years:\t",count_person_years(data)),
@@ -244,8 +248,8 @@ write_stats <- function(data) {
   
 }
 
-tabl <- build_table(outcome, predictor[1], wide_data)
-print_table(tabl)
+# tabl <- build_table(outcome, predictor[1], wide_data)
+# print_table(tabl)
 
 write_stats(wide_data)
   
@@ -266,15 +270,18 @@ write_results <- function(model, prefix) {
   write.table(summary_frame(model), fname, sep=";", row.names=TRUE, col.names=NA)
   
 }
+# Fix column types to match config
 for(C in covars) {
   # Make sure categorical variables are encoded as factors, even if represented as numbers
   if(C[2] == "categorical") {
     wide_data[,C[1]] <- as.factor(wide_data[,C[1]])
   }
 }
-# Drop type information
 covars <- vapply(FUN.VALUE=character(1), covars, function(x) x[1])
-if(getConfOption("analysis_type") == 1) {
+
+# Actual analysis
+                  
+if(getConfOption("analysis_type") == "First event") {
   
   # Censor after first event
   split_outcomes <- split(wide_data, wide_data$person_id)
@@ -305,7 +312,7 @@ if(getConfOption("analysis_type") == 1) {
 
   write_results(model, "adjusted")
   
-} else if (getConfOption("analysis_type") == 2) {
+} else if (getConfOption("analysis_type") == "Counting process") {
   # Multiple events allowed
   
   # Unadjusted model
@@ -319,7 +326,7 @@ if(getConfOption("analysis_type") == 1) {
   #)
   write_results(model, "adjusted")
   
-} else if (getConfOption("analysis_type") == 3) {
+} else if (getConfOption("analysis_type") == "Reset on event") {
   
   # Resetting at event
   resetted_data <- reset_on_event(wide_data, event=outcome, event_occurrence_marker=1, reset_type=getConfOption("reset_type"))
