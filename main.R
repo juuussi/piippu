@@ -27,6 +27,9 @@ readConfigFile(base_dir %>% paste0("piippu_config"))
 if(!getConfOption("analysis_type") %in% c("First event", "Resetting on event", "Counting process")) {
   stop("Option `analysis_type` must be one of `First event`, `Resetting on event`, `Counting process`.")
 }
+if(getConfOption("analysis_type") == "Resetting on event" && !getConfOption("reset_type") %in% c("First event", "Resetting on event", "Counting process")) {
+  stop("Option `reset_type` must be either `Conditional model A` or `Conditional model B`.")
+}
 
 # Set logging file
 flog.appender(appender.file(getConfOption("log_file")))
@@ -326,7 +329,7 @@ if(getConfOption("analysis_type") == "First event") {
   #)
   write_results(model, "adjusted")
   
-} else if (getConfOption("analysis_type") == "Reset on event") {
+} else if (getConfOption("analysis_type") == "Resetting on event") {
   
   # Resetting at event
   resetted_data <- reset_on_event(wide_data, event=outcome, event_occurrence_marker=1, reset_type=getConfOption("reset_type"))
