@@ -14,12 +14,18 @@ Rcpp::sourceCpp(base_dir %>% paste0("aux_funcs.cpp"))
 
 #TODO: use dplyr more
 
-make_wide <- function(timeindep_data, drug_data, event_data, static_covariate_data) {
+make_wide <- function(timeindep_data, drug_data, event_data, static_covariate_data, right_censoring_data, left_censoring_data) {
   
   valid_arg(timeindep_data, expected_class="DataObject", stop_on_false=TRUE)
   valid_arg(drug_data, expected_class="DataObject", stop_on_false=TRUE)
   valid_arg(event_data, expected_class="DataObject", stop_on_false=TRUE)
   valid_arg(static_covariate_data, expected_class="DataObject", stop_on_false=TRUE)
+  #valid_arg(right_censoring_data, expected_class="data.frame", stop_on_false=TRUE)
+  #valid_arg(left_censoring_data, expected_class="data.frame", stop_on_false=TRUE)
+  
+  if(any(right_censoring_data$person_id != left_censoring_data$person_id)) {
+    stop("Censoring data must have the same id's (in the same order)")
+  }
   
   
   # Data objects must have correct variable names to avoid mistakes with misordered columns
@@ -42,17 +48,28 @@ make_wide <- function(timeindep_data, drug_data, event_data, static_covariate_da
   drug_data  <- reorder_columns(drug_data, c("person_id", "start", "stop", "value", "dose"))
   static_covariate_data  <- reorder_columns(static_covariate_data, c("person_id", "name", "value"))
   
-  timedep_data <- rbind(event_data@data_matrix[,c("person_id", "start", "stop")], drug_data@data_matrix[,c("person_id", "start", "stop")])#asDataObject(timedep_data)
+  right_censoring_vars <- as.list(right_censoring_data %>% drop_col("person_id")) %>% na.as(.Machine$integer.max)
+  left_censoring_vars  <- as.list(left_censoring_data %>% drop_col("person_id")) %>% na.as(-.Machine$integer.max)
+  mins <- do.call(pmin, right_censoring_vars)
+  maxs <- do.call(pmax, left_censoring_vars)
+  censoring_data <- matrix(NA, nrow=nrow(right_censoring_data), ncol=3)
+  censoring_data[,1] <- right_censoring_data[,"person_id"]
+  censoring_data[,2] <- maxs
+  censoring_data[,3] <- mins
+  
+  timedep_data <- rbind(event_data@data_matrix[,c("person_id", "start", "stop")], 
+                        drug_data@data_matrix[,c("person_id", "start", "stop")],
+                        censoring_data)
   
   num_uniq_events <- length(unique(event_data$value))
   num_uniq_drugs <- length(unique(drug_data$value))
   
   wide_data <- make_all_intervals(timedep_data, idcolnum = 1)
-  # Add people who have no events or drug usages to data
-  extra_lines <- cbind(person_id = timeindep_data$person_id %>% base::setdiff(wide_data[,1]), 
-                       start = getAnalysisStart(), 
-                       end = getAnalysisEnd())
-  wide_data <- rbind(wide_data, extra_lines)
+  
+  # extra_lines <- cbind(person_id = extra_people, 
+  #                      start = maxs, 
+  #                      end = mins)
+  # wide_data <- rbind(wide_data, extra_lines)
   
   # Add event indicators
   event_inds <- add_event_indicators(wide_data, event_data@data_matrix[,c(1,3,4)], idcolnum = 1)
@@ -167,7 +184,7 @@ make_all_intervals <- function(data, idcolnum){
     nas <- which(unlist(apply(matr, MARGIN=1, FUN=function(x) all(is.na(x)))))
     return (ifelse(length(nas) > 0, min(nas), Inf))
   }
-  result <- Cpp_add_missing_intervals(data[,1:3], getAnalysisStart())
+  result <- Cpp_add_missing_intervals(data[,1:3])
   cut_row <- first_all_NA_row(result)
   # test_that("No non-all-NA-rows are removed", 
   #   expect_true(all(is.na(result[-1:-(cut_row-1), ])))
@@ -184,7 +201,7 @@ make_all_intervals <- function(data, idcolnum){
 # R wrapper for function Cpp_add_event_indicators
 # Event_data is assumed to consist of an ID-column, time column and event type column.
 # The function returns a matrix of indicators with a column for each event type.
-add_event_indicators <- function(time_matrix, event_data, idcolnum, permanent=rep(FALSE, times=ncol(event_data)-2)) {
+add_event_indicators <- function(time_matrix, event_data, idcolnum, permanent=rep(FALSE, times=length(unique(event_data[,3])))) {
   
   if(!is.matrix(time_matrix)) stop("Input time_matrix must be a matrix")
   
