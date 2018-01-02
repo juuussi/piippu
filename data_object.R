@@ -10,6 +10,12 @@ setClass("DataObject",
          list(data_matrix = "matrix", lvls="list"))
 
 DataObject <- function(data_matrix, lvls=list()) {
+  
+  if(!is.matrix(data_matrix) && is.vector(data_matrix)) { # Actually one-row matrix but represented as vector
+    nms <- names(data_matrix)
+    data_matrix <- matrix(data_matrix, nrow=1)
+    colnames(data_matrix) <- nms
+  }
   if(is.null(colnames(data_matrix))) stop("Cannot create a DataObject without column names.")
   temp <- new("DataObject", data_matrix = data_matrix, 
           lvls=lvls)
