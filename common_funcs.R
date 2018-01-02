@@ -56,9 +56,9 @@ na.as <- function(x, val) {
 }
 drop_col <- function(dataframe, column) {
   if(is.character(column))
-    return (dataframe[,base::setdiff(colnames(dataframe), column)])
+    return (dataframe[,base::setdiff(colnames(dataframe), column),drop=FALSE])
   if(is.integer(column))
-    return (dataframe[,-column])
+    return (dataframe[,-column,drop=FALSE])
 }
 
 to_unix_time <- function(date_strings, tz="UTC") {
