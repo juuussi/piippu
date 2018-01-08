@@ -243,10 +243,10 @@ write_stats <- function(data) {
   
   fname <- paste0(getConfOption("output_folder"), "/", c("stats.txt"))
   lns <- c(paste0("Total events: \t", sum(data[[outcome]] == 1)),
-           paste0("Total subjects\t:", length(unique(data$person_id))),
+           paste0("Total subjects:\t", length(unique(data$person_id))),
            paste0("Total person-years:\t",count_person_years(data)),
            paste0("Person-years with ", predictor[1], ": ", count_person_years(data[data[[predictor[1] ]]==1,])),
-           paste0("Person-years without ", predictor[1], ": ", count_person_years(data[data[[predictor[1] ]]!=0,])))
+           paste0("Person-years without ", predictor[1], ": ", count_person_years(data[data[[predictor[1] ]]!=1,])))
   writeLines(lns, fname, "\r\n")
   
 }
@@ -256,8 +256,10 @@ write_stats <- function(data) {
 
 write_stats(wide_data)
   
-flog.info(paste0("Analysis type is selected as ", 
-                 c("`first event only`", "`normal`", paste0("resetting with ", getConfOption("reset_type")))[as.integer(getConfOption("analysis_type"))]))
+flog.info(paste0("Analysis type is selected as ", getConfOption("analysis_type")))
+if(getConfOption("analysis_type")=="Resetting on event") {
+  flog.info(paste0("Resetting type selected as ", getConfOption("reset_type")))
+}
 flog.info(paste0("Starting analysis: "))
 
 summary_frame <- function(model) {
